@@ -1,0 +1,75 @@
+name: CI
+
+# Roda em todo Pull Request para a main e é reaproveitado pelo pipeline de CD.
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build, testes e cobertura
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Testes (unitários + integração com Testcontainers) e cobertura mínima de 80%
+        run: mvn -B verify
+
+      - name: Resumo da cobertura
+        if: always()
+        run: |
+          csv=target/site/jacoco/jacoco.csv
+          [ -f "$csv" ] || exit 0
+          awk -F, 'NR > 1 { ml += $8; cl += $9; mb += $6; cb += $7; mi += $4; ci += $5 }
+            END {
+              print "## Cobertura de testes (JaCoCo)"
+              print ""
+              print "| Métrica | Cobertura |"
+              print "|---|---|"
+              printf "| Linhas | %.1f%% |\n", 100 * cl / (ml + cl)
+              printf "| Branches | %.1f%% |\n", 100 * cb / (mb + cb)
+              printf "| Instruções | %.1f%% |\n", 100 * ci / (mi + ci)
+              print ""
+              print "Mínimo exigido: **80% das linhas**. Abaixo disso o build falha."
+            }' "$csv" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar relatório de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          if-no-files-found: ignore
+
+      - name: Publicar relatórios dos testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+
+  docker-build:
+    name: Build da imagem Docker
+    # no CD a imagem é construída e publicada pelo próprio pipeline de CD
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
