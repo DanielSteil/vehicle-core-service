@@ -1,0 +1,5 @@
+app:
+  sales-service:
+    internal-token: test-internal-token
+    max-attempts: 3
+    retry-backoff: 10ms
