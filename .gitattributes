@@ -1,0 +1,5 @@
+# scripts e manifests precisam de LF para rodar no runner e no cluster, mesmo com checkout no Windows
+* text=auto
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
