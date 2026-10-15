@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: vehicle-core-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:15432/core_db}
+    username: ${DB_USERNAME:core}
+    password: ${DB_PASSWORD:core}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  mvc:
+    problemdetails:
+      enabled: true
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  sales-service:
+    base-url: ${SALES_SERVICE_URL:http://localhost:8082}
+    # sem valor padrão de propósito: a aplicação não sobe sem o token
+    internal-token: ${SALES_INTERNAL_TOKEN:}
+    connect-timeout: 2s
+    read-timeout: 5s
+    max-attempts: 3
+    retry-backoff: 300ms
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
