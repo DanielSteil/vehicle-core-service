@@ -1,0 +1,17 @@
+# Serviço principal (cadastro/edição de veículos).
+# Fora do cluster: NodePort 30081 (minikube service ... --url) ou kubectl port-forward.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vehicle-core-service
+  labels:
+    app: vehicle-core-service
+spec:
+  type: NodePort
+  selector:
+    app: vehicle-core-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30081
