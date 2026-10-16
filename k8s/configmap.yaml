@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vehicle-core-service-config
+data:
+  DB_URL: jdbc:postgresql://core-db:5432/core_db
+  # comunicação entre os serviços por HTTP, via DNS interno do cluster
+  SALES_SERVICE_URL: http://vehicle-sales-service

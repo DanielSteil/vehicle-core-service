@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: vehicle-platform
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: vehicle-platform
+resources:
+  - namespace.yaml
+  - core-db.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml

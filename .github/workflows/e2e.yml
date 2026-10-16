@@ -1,0 +1,24 @@
+name: E2E no cluster
+
+# Roda o teste ponta a ponta contra os dois serviços publicados no Kubernetes.
+# Disparo manual (Actions > E2E no cluster > Run workflow), depois do deploy dos dois repositórios.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Cadastro, compra e webhook ponta a ponta
+    runs-on: [self-hosted, minikube]
+    env:
+      KUBE_CONTEXT: minikube
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Teste ponta a ponta
+        shell: bash
+        env:
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        run: bash scripts/e2e-k8s.sh

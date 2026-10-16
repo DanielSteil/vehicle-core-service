@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vehicle-core-service
+  labels:
+    app: vehicle-core-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vehicle-core-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: vehicle-core-service
+        app.kubernetes.io/part-of: vehicle-platform
+      annotations:
+        # preenchido pelo scripts/deploy.sh: muda quando os segredos mudam e força o restart dos pods
+        vehicle-platform/secrets-hash: "unset"
+    spec:
+      containers:
+        - name: app
+          # o pipeline de CD troca pela imagem com a tag do commit (ghcr.io/<dono>/vehicle-core-service:<sha>)
+          image: vehicle-core-service
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: vehicle-core-service-config
+            - secretRef:
+                name: vehicle-core-service-secrets
+          env:
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: core-db-credentials
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: core-db-credentials
+                  key: password
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi

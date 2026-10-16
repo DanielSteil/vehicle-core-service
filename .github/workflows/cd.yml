@@ -1,0 +1,90 @@
+name: CD
+
+# Disparado pelo merge de um Pull Request na main (a main é protegida e só recebe código por PR).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    name: Testes
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publicar imagem no GHCR
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Nome da imagem
+        id: image
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vehicle-core-service"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "ref=$repo:${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.ref }}
+            ${{ steps.image.outputs.repo }}:latest
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy no Kubernetes
+    needs: publish
+    # runner auto-hospedado na máquina que roda o cluster (ver README)
+    runs-on: [self-hosted, minikube]
+    env:
+      KUBE_CONTEXT: minikube
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Carregar a imagem no cluster
+        # o runner roda na mesma máquina do minikube: baixa a imagem publicada no GHCR e a carrega
+        # direto no nó, sem exigir pacote público nem acesso à internet de dentro do cluster
+        shell: bash
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$IMAGE"
+          docker logout ghcr.io
+          minikube image load "$IMAGE"
+
+      - name: Aplicar manifests e aguardar o rollout
+        shell: bash
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+          CORE_DB_PASSWORD: ${{ secrets.CORE_DB_PASSWORD }}
+          INTERNAL_API_TOKEN: ${{ secrets.INTERNAL_API_TOKEN }}
+        run: bash scripts/deploy.sh
+
+      - name: Smoke test
+        shell: bash
+        run: bash scripts/smoke-test.sh
