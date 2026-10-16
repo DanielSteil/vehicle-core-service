@@ -34,7 +34,21 @@ kube kustomize k8s \
            -e "s#^([[:space:]]*vehicle-platform/secrets-hash:[[:space:]]*).*#\1\"${SECRETS_HASH}\"#" \
   | kube apply -f -
 
-echo "==> Aguardando o rollout"
+echo "==> Aguardando o banco"
 kube -n "$NAMESPACE" rollout status statefulset/core-db --timeout=180s
+
+echo "==> Sincronizando a senha do banco com o Secret"
+# O PostgreSQL só lê POSTGRES_PASSWORD ao criar o volume. Se o volume já existia (redeploy, troca do secret
+# ou dados que sobraram no nó), a senha do banco é alinhada aqui com a do Secret. A senha vai pelo stdin.
+printf "ALTER USER CURRENT_USER WITH PASSWORD '%s';\n" "${CORE_DB_PASSWORD//\'/\'\'}" \
+  | kube -n "$NAMESPACE" exec -i core-db-0 -- psql -q -v ON_ERROR_STOP=1 -U core -d core_db
+
+# pods que caíram antes da sincronização só tentariam de novo depois do backoff; recria apenas esses
+crashing=$(kube -n "$NAMESPACE" get pods -l app=vehicle-core-service \
+  -o jsonpath='{range .items[*]}{.metadata.name} {.status.containerStatuses[0].state.waiting.reason}{"\n"}{end}' \
+  | awk '$2 == "CrashLoopBackOff" {print $1}')
+[ -z "$crashing" ] || kube -n "$NAMESPACE" delete pod $crashing --wait=false
+
+echo "==> Aguardando o rollout da aplicação"
 kube -n "$NAMESPACE" rollout status deployment/vehicle-core-service --timeout=300s
 kube -n "$NAMESPACE" get pods -l app.kubernetes.io/part-of=vehicle-platform -o wide

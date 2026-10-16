@@ -134,9 +134,9 @@ CORE_DB_PASSWORD=<senha> INTERNAL_API_TOKEN=<token compartilhado com o serviço 
 KUBE_CONTEXT=minikube ./scripts/deploy.sh
 ```
 
-> **Senha do banco:** o PostgreSQL só aplica `CORE_DB_PASSWORD` na primeira inicialização do volume. Para trocar a
-> senha depois, recrie o volume (`kubectl -n vehicle-platform delete statefulset core-db && kubectl -n vehicle-platform delete pvc data-core-db-0`)
-> e rode o deploy de novo.
+> **Senha do banco:** o PostgreSQL só lê a senha ao criar o volume; por isso o `deploy.sh` alinha a senha do
+> banco com o Secret (`ALTER USER`) a cada execução. Para trocar a senha, basta atualizar o secret `CORE_DB_PASSWORD`
+> e rodar o CD de novo.
 
 Para acessar de fora do cluster: `kubectl -n vehicle-platform port-forward svc/vehicle-core-service 18081:80`.
 Depois que os dois serviços estiverem no cluster, `WEBHOOK_SECRET=<segredo> KUBE_CONTEXT=minikube ./scripts/e2e-k8s.sh`
