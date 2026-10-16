@@ -147,7 +147,7 @@ roda o teste ponta a ponta contra eles.
 | Workflow | Gatilho | O que faz |
 |---|---|---|
 | [`ci.yml`](.github/workflows/ci.yml) | Pull Request para a `main` | `mvn verify` (testes, Testcontainers, trava de 80%), resumo da cobertura no PR, relatórios como artefato e build da imagem |
-| [`cd.yml`](.github/workflows/cd.yml) | Merge na `main` | Roda o CI de novo → publica a imagem no GHCR (`:<sha>` e `:latest`) → deploy no Kubernetes → smoke test |
+| [`cd.yml`](.github/workflows/cd.yml) | Merge na `main` | Roda o CI de novo → publica a imagem no GHCR (`:<sha>` e `:latest`) → carrega a imagem no minikube → deploy no Kubernetes → smoke test |
 | [`e2e.yml`](.github/workflows/e2e.yml) | Manual | Teste ponta a ponta contra os dois serviços no cluster |
 
 **Configuração do repositório:**
@@ -157,12 +157,17 @@ roda o teste ponta a ponta contra eles.
    - `CORE_DB_PASSWORD`: senha do banco do serviço principal.
    - `INTERNAL_API_TOKEN`: o mesmo valor configurado no repositório do serviço de venda.
    - `WEBHOOK_SECRET`: o mesmo valor do serviço de venda (usado só pelo workflow E2E).
-3. **Runner auto-hospedado** na máquina do cluster (Settings → Actions → Runners → New self-hosted runner), com o label `minikube`, e o cluster de pé:
-   ```bash
+3. **Runner auto-hospedado** na máquina do cluster (Settings → Actions → Runners → New self-hosted runner → Windows x64).
+   Siga os comandos que o GitHub mostra; no `config.cmd`, informe o label adicional `minikube`. Depois, com o cluster de pé,
+   inicie o runner pelo PowerShell com o `bash` do Git no PATH (os passos do deploy usam `shell: bash`):
+   ```powershell
    minikube start
    minikube addons enable metrics-server
+   $env:Path = "C:\Program Files\Git\bin;" + $env:Path
+   .\run.cmd
    ```
-4. **Imagem pública no GHCR:** depois do primeiro deploy, deixe o pacote `vehicle-core-service` público (Packages → Package settings → Change visibility), para o cluster conseguir baixar a imagem sem credencial.
+   O deploy baixa a imagem do GHCR na própria máquina e a carrega no minikube (`minikube image load`), então o pacote
+   pode continuar privado.
 
 > Segurança: o job de deploy só roda em `push` na `main`, nunca em PRs de forks, então código de terceiros não executa no runner auto-hospedado.
 

@@ -64,6 +64,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Carregar a imagem no cluster
+        # o runner roda na mesma máquina do minikube: baixa a imagem publicada no GHCR e a carrega
+        # direto no nó, sem exigir pacote público nem acesso à internet de dentro do cluster
+        shell: bash
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$IMAGE"
+          docker logout ghcr.io
+          minikube image load "$IMAGE"
+
       - name: Aplicar manifests e aguardar o rollout
         shell: bash
         env:
