@@ -102,6 +102,9 @@ Ou rode o roteiro inteiro automatizado, com verificações em cada passo:
 ./scripts/e2e.sh
 ```
 
+Também dá para fazer todas as chamadas pelo Postman: a collection, com testes em cada requisição e environments para o
+Docker Compose e o Kubernetes, está em [`docs/postman/`](docs/postman/README.md).
+
 ## Como testar
 
 ```bash
