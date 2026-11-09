@@ -12,6 +12,12 @@ kubectl -n vehicle-platform get pods        # 5 pods Running
 
 Deixe abertos: os dois repositórios no GitHub (aba Actions), um terminal na pasta `vehicle-core-service` e outro na `vehicle-sales-service`.
 
+Para as chamadas do passo 5, importe no Postman os arquivos de [`docs/postman/`](postman/README.md), escolha o environment **Revenda - Kubernetes (port-forward)**, preencha `webhook_secret` e deixe rodando num terminal:
+
+```bash
+KUBE_CONTEXT=minikube ./scripts/port-forward.sh
+```
+
 ## 1. Arquitetura (2 min)
 
 - Abra `docs/arquitetura.md` no GitHub e mostre o diagrama: dois serviços, dois bancos e a chamada HTTP só do principal para o de venda.
@@ -53,7 +59,9 @@ Abra `target/site/jacoco/index.html`: sales com cerca de 99% de linhas, core com
 
 ## 5. Teste ponta a ponta no cluster (3 min)
 
-Rode no terminal (ou pelo workflow **E2E no cluster**, na aba Actions do repositório principal):
+No **Postman**, execute as pastas 1 a 6 da collection em ordem, uma requisição por vez. Cada chamada mostra a aba *Test Results* passando. Para fechar, rode a pasta 7 (regras e segurança) ou a collection inteira no Runner.
+
+Alternativas automatizadas: o workflow **E2E no cluster**, na aba Actions do repositório principal, ou no terminal:
 
 ```bash
 WEBHOOK_SECRET=<segredo> KUBE_CONTEXT=minikube ./scripts/e2e-k8s.sh

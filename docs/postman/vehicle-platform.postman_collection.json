@@ -1,0 +1,1214 @@
+{
+  "info": {
+    "_postman_id": "4235b9eb-3418-579f-a898-6e2e5672f4ff",
+    "name": "Revenda de Veículos - Tech Challenge Fase 4",
+    "description": "Roteiro da demonstração ponta a ponta: cadastro no serviço principal, vitrine e compra no serviço de venda, efetivação pelo webhook de pagamento e cancelamento.\n\nRode as pastas em ordem (ou a collection inteira no Runner). Os ids, o código de pagamento e a data da venda são preenchidos automaticamente nas variáveis da collection; cada execução cadastra veículos novos.\n\nEscolha um environment: **Local (docker compose)** ou **Kubernetes (port-forward)**. No Kubernetes, rode antes `./scripts/port-forward.sh` e preencha `webhook_secret` com o valor do secret WEBHOOK_SECRET.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// data de hoje no fuso de São Paulo (UTC-3), usada como data da venda",
+          "pm.collectionVariables.set(\"today\", new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "buyer_cpf",
+      "value": "529.982.247-25"
+    },
+    {
+      "key": "today",
+      "value": ""
+    },
+    {
+      "key": "corolla_id",
+      "value": ""
+    },
+    {
+      "key": "onix_id",
+      "value": ""
+    },
+    {
+      "key": "corolla_sale_id",
+      "value": ""
+    },
+    {
+      "key": "corolla_payment_code",
+      "value": ""
+    },
+    {
+      "key": "onix_payment_code",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Saúde dos serviços",
+      "description": "Confere que os dois serviços estão no ar antes da demonstração (mesmas probes usadas pelo Kubernetes).",
+      "item": [
+        {
+          "name": "Serviço principal - readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{core_url}}/actuator/health/readiness",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "readiness"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - serviço principal pronto\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Status UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Serviço de venda - readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{sales_url}}/actuator/health/readiness",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "readiness"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - serviço de venda pronto\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Status UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Cadastro de veículos (serviço principal)",
+      "description": "O serviço principal grava no próprio banco (core_db) e publica o veículo no serviço de venda por HTTP (PUT /internal/vehicles/{id}). Os ids gerados ficam salvos nas variáveis da collection.",
+      "item": [
+        {
+          "name": "Cadastrar Corolla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/vehicles",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "vehicles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Toyota\",\n  \"model\": \"Corolla\",\n  \"year\": 2022,\n  \"color\": \"Prata\",\n  \"price\": 120000.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201 - veículo cadastrado\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"corolla_id\", body.id);",
+                  "pm.test(\"Retorna o veículo com o id gerado\", () => {",
+                  "    pm.expect(body.id).to.be.a(\"string\");",
+                  "    pm.expect(body.model).to.eql(\"Corolla\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar Onix",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/vehicles",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "vehicles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Chevrolet\",\n  \"model\": \"Onix\",\n  \"year\": 2023,\n  \"color\": \"Branco\",\n  \"price\": 85000.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201 - veículo cadastrado\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"onix_id\", body.id);",
+                  "pm.test(\"Retorna o veículo com o id gerado\", () => pm.expect(body.model).to.eql(\"Onix\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar o Corolla",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{core_url}}/vehicles/{{corolla_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "{{corolla_id}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - cadastro encontrado\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"É o Corolla cadastrado\", () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"corolla_id\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar o cadastro (mais recentes primeiro)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{core_url}}/vehicles?page=0&size=10",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "vehicles"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - listagem do cadastro\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Vitrine (serviço de venda)",
+      "description": "Listagem pública, isolada no serviço de venda e servida pelo banco dele (sales_db).",
+      "item": [
+        {
+          "name": "Veículos à venda (mais barato primeiro)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{sales_url}}/vehicles/available?page=0&size=100",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "available"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - vitrine\", () => pm.response.to.have.status(200));",
+                  "const content = pm.response.json().content;",
+                  "const ids = content.map(v => v.id);",
+                  "const prices = content.map(v => Number(v.price));",
+                  "const corolla = pm.collectionVariables.get(\"corolla_id\");",
+                  "const onix = pm.collectionVariables.get(\"onix_id\");",
+                  "pm.test(\"Corolla e Onix chegaram ao serviço de venda (sincronizados por HTTP)\", () => {",
+                  "    pm.expect(ids).to.include(corolla);",
+                  "    pm.expect(ids).to.include(onix);",
+                  "});",
+                  "pm.test(\"Ordenada do mais barato para o mais caro\", () => {",
+                  "    pm.expect(prices).to.eql([...prices].sort((a, b) => a - b));",
+                  "    pm.expect(ids.indexOf(onix)).to.be.below(ids.indexOf(corolla));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Edição (serviço principal)",
+      "description": "A edição também é repassada ao serviço de venda.",
+      "item": [
+        {
+          "name": "Editar o preço do Corolla",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/vehicles/{{corolla_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "{{corolla_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Toyota\",\n  \"model\": \"Corolla\",\n  \"year\": 2022,\n  \"color\": \"Prata\",\n  \"price\": 118000.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - veículo editado\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Novo preço gravado\", () => pm.expect(Number(pm.response.json().price)).to.eql(118000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vitrine com o novo preço",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{sales_url}}/vehicles/available?page=0&size=100",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "available"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - vitrine\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Novo preço do Corolla já está no serviço de venda\", () => {",
+                  "    const corolla = pm.response.json().content.find(v => v.id === pm.collectionVariables.get(\"corolla_id\"));",
+                  "    pm.expect(Number(corolla.price)).to.eql(118000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Compra (serviço de venda)",
+      "description": "Efetua a venda com o CPF do comprador e a data da venda. O veículo fica reservado até o processador de pagamento responder pelo webhook.",
+      "item": [
+        {
+          "name": "Comprar o Corolla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/sales",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "sales"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{corolla_id}}\",\n  \"buyerCpf\": \"{{buyer_cpf}}\",\n  \"saleDate\": \"{{today}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201 - venda criada\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"corolla_sale_id\", body.id);",
+                  "pm.collectionVariables.set(\"corolla_payment_code\", body.paymentCode);",
+                  "pm.test(\"Venda aguardando pagamento, com código de pagamento\", () => {",
+                  "    pm.expect(body.paymentStatus).to.eql(\"PENDING\");",
+                  "    pm.expect(body.paymentCode).to.be.a(\"string\");",
+                  "});",
+                  "pm.test(\"CPF mascarado na resposta (LGPD)\", () => pm.expect(body.buyerCpf).to.eql(\"***.982.247-**\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vitrine sem o Corolla (reservado)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{sales_url}}/vehicles/available?page=0&size=100",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "available"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - vitrine\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Corolla reservado não aparece à venda\", () => {",
+                  "    const ids = pm.response.json().content.map(v => v.id);",
+                  "    pm.expect(ids).to.not.include(pm.collectionVariables.get(\"corolla_id\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Editar o Corolla reservado (recusado)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/vehicles/{{corolla_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "{{corolla_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Toyota\",\n  \"model\": \"Corolla\",\n  \"year\": 2022,\n  \"color\": \"Prata\",\n  \"price\": 1.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409 - serviço de venda recusou a edição\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Motivo informado\", () => pm.expect(pm.response.json().detail).to.include(\"reservado\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Efetivação pelo webhook de pagamento",
+      "description": "Chamada que o processador de pagamento faz, a partir do código de pagamento, informando se o pagamento foi efetuado ou cancelado. Exige o header X-Webhook-Secret.",
+      "item": [
+        {
+          "name": "Pagamento efetuado (PAID)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Webhook-Secret",
+                "value": "{{webhook_secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/webhooks/payments",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentCode\": \"{{corolla_payment_code}}\",\n  \"status\": \"PAID\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - notificação processada\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Venda efetivada\", () => pm.expect(pm.response.json().paymentStatus).to.eql(\"PAID\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar a venda",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{sales_url}}/sales/{{corolla_sale_id}}",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "sales",
+                "{{corolla_sale_id}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - venda encontrada\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Status do pagamento PAID\", () => pm.expect(pm.response.json().paymentStatus).to.eql(\"PAID\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Veículos vendidos (mais barato primeiro)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{sales_url}}/vehicles/sold?page=0&size=100",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "sold"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - lista de vendidos\", () => pm.response.to.have.status(200));",
+                  "const content = pm.response.json().content;",
+                  "const prices = content.map(v => Number(v.price));",
+                  "pm.test(\"Corolla na lista de vendidos, com CPF mascarado\", () => {",
+                  "    const corolla = content.find(v => v.vehicleId === pm.collectionVariables.get(\"corolla_id\"));",
+                  "    pm.expect(corolla.buyerCpf).to.eql(\"***.982.247-**\");",
+                  "});",
+                  "pm.test(\"Ordenada do mais barato para o mais caro\", () => pm.expect(prices).to.eql([...prices].sort((a, b) => a - b)));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Cancelamento",
+      "description": "Quando o processador informa CANCELED, a venda é cancelada e o veículo volta para a vitrine.",
+      "item": [
+        {
+          "name": "Comprar o Onix",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/sales",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "sales"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{onix_id}}\",\n  \"buyerCpf\": \"{{buyer_cpf}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201 - venda criada\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"onix_payment_code\", pm.response.json().paymentCode);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pagamento cancelado (CANCELED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Webhook-Secret",
+                "value": "{{webhook_secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/webhooks/payments",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentCode\": \"{{onix_payment_code}}\",\n  \"status\": \"CANCELED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - notificação processada\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Venda cancelada\", () => pm.expect(pm.response.json().paymentStatus).to.eql(\"CANCELED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Onix de volta à vitrine",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{sales_url}}/vehicles/available?page=0&size=100",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "available"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - vitrine\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Onix disponível de novo\", () => {",
+                  "    const ids = pm.response.json().content.map(v => v.id);",
+                  "    pm.expect(ids).to.include(pm.collectionVariables.get(\"onix_id\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Regras de negócio e segurança (opcional)",
+      "description": "Cenários de erro tratados pela API, todos no formato application/problem+json.",
+      "item": [
+        {
+          "name": "Webhook repetido é aceito sem efeito (idempotente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Webhook-Secret",
+                "value": "{{webhook_secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/webhooks/payments",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentCode\": \"{{corolla_payment_code}}\",\n  \"status\": \"PAID\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 - mesma notificação aceita de novo\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Continua PAID\", () => pm.expect(pm.response.json().paymentStatus).to.eql(\"PAID\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Webhook contraditório é recusado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Webhook-Secret",
+                "value": "{{webhook_secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/webhooks/payments",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentCode\": \"{{corolla_payment_code}}\",\n  \"status\": \"CANCELED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409 - não cancela uma venda já paga\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Webhook sem o segredo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/webhooks/payments",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentCode\": \"{{corolla_payment_code}}\",\n  \"status\": \"PAID\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401 - header X-Webhook-Secret obrigatório\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Comprar veículo já vendido",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/sales",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "sales"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{corolla_id}}\",\n  \"buyerCpf\": \"{{buyer_cpf}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409 - veículo indisponível\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Comprar com CPF inválido",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/sales",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "sales"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{onix_id}}\",\n  \"buyerCpf\": \"111.111.111-11\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422 - CPF validado pelos dígitos verificadores\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Mensagem de CPF inválido\", () => pm.expect(pm.response.json().detail).to.eql(\"CPF inválido\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Comprar com data da venda no futuro",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/sales",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "sales"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{onix_id}}\",\n  \"buyerCpf\": \"{{buyer_cpf}}\",\n  \"saleDate\": \"2999-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422 - data da venda não pode ser futura\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastro com campos inválidos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/vehicles",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "vehicles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"\",\n  \"model\": \"Corolla\",\n  \"color\": \"Prata\",\n  \"price\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400 - validação dos campos\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Erros por campo\", () => {",
+                  "    const errors = pm.response.json().errors;",
+                  "    pm.expect(Object.keys(errors)).to.include(\"brand\");",
+                  "    pm.expect(Object.keys(errors)).to.include(\"year\");",
+                  "    pm.expect(Object.keys(errors)).to.include(\"price\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Endpoint interno sem o token",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{sales_url}}/internal/vehicles/{{onix_id}}",
+              "host": [
+                "{{sales_url}}"
+              ],
+              "path": [
+                "internal",
+                "vehicles",
+                "{{onix_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Chevrolet\",\n  \"model\": \"Onix\",\n  \"year\": 2023,\n  \"color\": \"Branco\",\n  \"price\": 1.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401 - só o serviço principal, com X-Internal-Token, pode chamar\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
